@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f7a5c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Interpreter">
+<title>Ken Interpreter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Noto+Serif+SC:wght@500;700&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* One-screen live interpreter: live subtitle stage on top, transcript in the middle, two speaker buttons pinned at the bottom. Chinese in serif, English in sans. */
+:root{
+  --bg:#f2f5f3; --surface:#ffffff; --ink:#14201c; --muted:#5d6b66; --line:#dbe3df;
+  --jade:#0f7a5c; --jade-soft:#e2f1ea; --seal:#b8371f; --seal-soft:#fbe9e4; --gold:#9a6b00;
+  --f-zh:"Noto Serif SC","Songti SC","SimSun",serif;
+  --f-ui:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0d1412; --surface:#151f1c; --ink:#e4ece8; --muted:#93a39d; --line:#26332f;
+  --jade:#4cc79f; --jade-soft:#173029; --seal:#f08a72; --seal-soft:#3a1f19; --gold:#e3b54a; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.45;
+  padding-top:env(safe-area-inset-top,0px)}
+.app{height:100%;display:flex;flex-direction:column;max-width:720px;margin:0 auto}
+.pad{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:10px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:baseline;gap:8px;min-width:0}
+.brand b{font-family:var(--f-zh);font-size:20px;color:var(--jade)}
+.brand span{font-weight:600;font-size:16px}
+.brand small{color:var(--muted);font-size:12px;white-space:nowrap}
+.ghost{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer}
+.ghost:hover{color:var(--ink)}
+.engine{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.engine b{color:var(--jade);font-weight:600}
+
+.stage{border-bottom:1px solid var(--line);background:var(--surface);padding-block:12px;display:flex;flex-direction:column;gap:6px;min-height:112px}
+.status{display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.live .dot{background:var(--seal)}
+@media (prefers-reduced-motion:no-preference){.live .dot{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{opacity:.25}}}
+.liveSrc{font-family:var(--f-zh);font-size:20px;color:var(--muted);overflow-wrap:anywhere;min-height:1.4em}
+.liveSrc.en{font-family:var(--f-ui);font-size:17px}
+.liveOut{font-size:20px;font-weight:600;overflow-wrap:anywhere;min-height:1.4em}
+.liveOut.zh{font-family:var(--f-zh);font-size:24px}
+
+#log{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-block:14px}
+.banner{background:var(--seal-soft);color:var(--seal);border-radius:10px;padding:10px 12px;font-size:14px}
+.empty{color:var(--muted);text-align:center;margin:auto;max-width:36ch}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.card.mine{border-left:3px solid var(--jade)}
+.meta{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tag{background:var(--jade-soft);color:var(--jade);border-radius:4px;padding:1px 6px}
+.tag.ex{background:var(--line);color:var(--muted)}
+.tag.draft{background:transparent;color:var(--gold);padding:0}
+.src{color:var(--muted);font-size:14px;overflow-wrap:anywhere}
+.src.zh{font-family:var(--f-zh)}
+.out{font-size:18px;font-weight:500;overflow-wrap:anywhere}
+.out.zh{font-family:var(--f-zh);font-size:22px;font-weight:700;line-height:1.4}
+.py{font-family:var(--f-mono);font-size:12.5px;color:var(--muted)}
+.flag{background:var(--seal-soft);color:var(--seal);border-radius:8px;padding:6px 10px;font-size:13.5px}
+.pending{color:var(--muted);font-style:italic}
+.actions{display:flex;gap:14px;flex-wrap:wrap}
+.actions button{background:none;border:none;color:var(--jade);font:inherit;font-size:13px;font-weight:600;padding:2px 0;cursor:pointer}
+
+.controls{border-top:1px solid var(--line);background:var(--surface);padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:10px}
+.speakers{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.spk{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:14px;padding:14px 10px;font:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:72px}
+.spk .t{font-weight:600;font-size:16px}
+.spk .t.zh{font-family:var(--f-zh);font-size:19px}
+.spk .s{font-size:12px;color:var(--muted)}
+.spk.on{background:var(--jade);border-color:var(--jade);color:var(--surface)}
+.spk.on .s{color:var(--surface);opacity:.85}
+.typeRow{display:flex;gap:8px}
+.typeRow input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit;font-size:16px}
+.typeRow button{border:1px solid var(--jade);background:var(--jade);color:var(--surface);border-radius:10px;padding:0 14px;font:inherit;font-weight:600;cursor:pointer}
+input:focus-visible,button:focus-visible,select:focus-visible{outline:2px solid var(--jade);outline-offset:2px}
+
+.sheet{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
+.panel{background:var(--surface);width:100%;max-width:560px;border-radius:16px 16px 0 0;padding-top:18px;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px;max-height:90%;overflow-y:auto}
+.panel h2{margin:0;font-size:18px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-weight:600;font-size:14px}
+.field .help{font-size:12.5px;color:var(--muted)}
+.field input,.field select{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit;font-size:16px}
+.check{display:flex;gap:10px;align-items:center;font-size:14px}
+.check input{accent-color:var(--jade);width:18px;height:18px}
+.panelBtns{display:flex;gap:10px;justify-content:space-between}
+.primary{border:none;background:var(--jade);color:var(--surface);border-radius:10px;padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
+
+.show{position:fixed;inset:0;z-index:40;background:var(--surface);display:flex;flex-direction:column;justify-content:center;gap:18px;cursor:pointer;
+  padding:calc(24px + env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(24px,env(safe-area-inset-left,0px))}
+.show .big{font-family:var(--f-zh);font-weight:700;font-size:clamp(30px,8vw,56px);line-height:1.35;overflow-wrap:anywhere}
+.show .py{font-size:15px}
+.show .close{color:var(--muted);font-size:13px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="pad">
+    <div class="brand"><b>译</b><span>Interpreter</span><small>中文 ⇄ EN</small></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span class="engine" id="engineLbl"></span>
+      <button class="ghost" id="openSettings" type="button">Settings</button>
+    </div>
+  </header>
+
+  <section class="stage pad" id="stage" aria-live="polite">
+    <div class="status"><span class="dot"></span><span id="statusTxt">Tap a speaker button to start listening</span></div>
+    <div class="liveSrc" id="liveSrc"></div>
+    <div class="liveOut" id="liveOut"></div>
+  </section>
+
+  <div id="log" class="pad"></div>
+
+  <div class="controls pad">
+    <div class="speakers">
+      <button class="spk" id="btnThem" type="button"><span class="t zh">他们说</span><span class="s">They speak Chinese</span></button>
+      <button class="spk" id="btnMe" type="button"><span class="t">I speak</span><span class="s" id="meSub">English → 中文</span></button>
+    </div>
+    <form class="typeRow" id="typeForm">
+      <input id="typeBox" type="text" placeholder="Or type here (any language)" autocomplete="off" enterkeyhint="send">
+      <button type="submit">Go</button>
+    </form>
+  </div>
+</div>
+
+<div class="sheet" id="settings" hidden>
+  <div class="panel pad" role="dialog" aria-label="Settings">
+    <h2>Settings</h2>
+    <div class="field">
+      <label for="engine">Translation engine</label>
+      <select id="engine">
+        <option value="free">Fast (free, Google Translate)</option>
+        <option value="claude">Accurate (Claude, needs API key)</option>
+      </select>
+      <div class="help">Live subtitles always use the fast engine. The engine here decides the final translation of each sentence. Claude also flags prices, quantities, deadlines and halal concerns.</div>
+    </div>
+    <div class="field">
+      <label for="apiKey">Claude API key</label>
+      <input id="apiKey" type="password" placeholder="sk-ant-…" autocomplete="off">
+      <div class="help">Stored only on this phone. Get one at console.anthropic.com. Set a monthly spend limit there.</div>
+    </div>
+    <div class="field">
+      <label for="myLang">I speak</label>
+      <select id="myLang">
+        <option value="en-MY">English</option>
+        <option value="ms-MY">Bahasa Melayu</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="theirLang">They speak</label>
+      <select id="theirLang">
+        <option value="zh-CN">Mandarin (Simplified)</option>
+        <option value="zh-TW">Mandarin (Traditional)</option>
+        <option value="yue-Hant-HK">Cantonese</option>
+      </select>
+    </div>
+    <label class="check"><input type="checkbox" id="speak"> Read my Chinese replies out loud</label>
+    <div class="panelBtns">
+      <button class="ghost" id="clearLog" type="button">Clear transcript</button>
+      <button class="primary" id="closeSettings" type="button">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="show" id="show" hidden role="dialog" aria-label="Show to the other person">
+  <div class="big" id="showBig"></div>
+  <div class="py" id="showPy"></div>
+  <div class="close">Tap anywhere to close</div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const LOGKEY = "ken-interp-log-v2", SETKEY = "ken-interp-settings-v2";
+  const isZh = s => /[㐀-鿿]/.test(s || "");
+  const store = {
+    get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+  };
+
+  const settings = Object.assign({ engine: "free", apiKey: "", myLang: "en-MY", theirLang: "zh-CN", speak: false }, store.get(SETKEY, {}));
+  const EXAMPLES = [
+    { ex: true, dir: "zh-en", source: "这个牛油下个礼拜开始涨价，一箱多五块。", out: "This butter goes up in price from next week, RM5 more per carton.", pinyin: "", flag: "Price increase: +RM5 per carton from next week. Ask them to confirm in writing." },
+    { ex: true, dir: "en-zh", source: "Can you send me the halal certificate for this flour?", out: "可以把这个面粉的清真证书发给我吗？", pinyin: "Kěyǐ bǎ zhège miànfěn de qīngzhēn zhèngshū fā gěi wǒ ma?", flag: "" }
+  ];
+  let items = store.get(LOGKEY, null) || EXAMPLES.slice();
+  items.forEach(i => { if (i.pending) { i.pending = false; if (!i.out) i.error = "Interrupted."; } });
+  const save = () => store.set(LOGKEY, items.filter(i => !i.ex).slice(-80));
+  let notice = "";
+
+  // ---------- Rendering ----------
+  const log = $("log");
+  function el(tag, cls, text){ const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+  function render(){
+    const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    log.textContent = "";
+    if (notice) log.append(el("div", "banner", notice));
+    if (!items.length) log.append(el("div", "empty", "Nothing yet. Tap 他们说 and let them talk, or tap I speak to reply."));
+    for (const it of items) log.append(card(it));
+    if (nearBottom || true) log.scrollTop = log.scrollHeight;
+    $("engineLbl").innerHTML = settings.engine === "claude" && settings.apiKey ? "<b>Claude</b>" : "Fast";
+    $("meSub").textContent = (settings.myLang === "ms-MY" ? "Melayu" : "English") + " → 中文";
+  }
+  function card(it){
+    const mine = it.dir === "en-zh";
+    const c = el("div", "card" + (mine ? " mine" : ""));
+    const m = el("div", "meta");
+    m.append(el("span", "tag", mine ? "You → 中文" : "中文 → EN"));
+    if (it.ex) m.append(el("span", "tag ex", "Example"));
+    if (it.engine === "free" && !it.pending && !it.ex) m.append(el("span", "tag draft", "Fast"));
+    c.append(m);
+    if (it.source) c.append(el("div", "src" + (isZh(it.source) ? " zh" : ""), it.source));
+    if (it.pending) c.append(el("div", "pending", it.out ? it.out : "Translating…"));
+    else if (it.error && !it.out) {
+      c.append(el("div", "flag", it.error));
+      const a = el("div", "actions"); const r = el("button", null, "Retry"); r.type = "button"; r.onclick = () => translate(it); a.append(r); c.append(a);
+    } else {
+      c.append(el("div", "out" + (isZh(it.out) ? " zh" : ""), it.out));
+      if (it.pinyin) c.append(el("div", "py", it.pinyin));
+      if (it.flag) c.append(el("div", "flag", "Check: " + it.flag));
+      if (it.error) c.append(el("div", "py", it.error));
+      const a = el("div", "actions");
+      const cp = el("button", null, "Copy"); cp.type = "button";
+      cp.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(it.out).then(() => { cp.textContent = "Copied"; setTimeout(() => cp.textContent = "Copy", 1200); }, () => {}); };
+      a.append(cp);
+      if (isZh(it.out)) {
+        const sh = el("button", null, "Show to them"); sh.type = "button"; sh.onclick = () => showBig(it); a.append(sh);
+        const pl = el("button", null, "Play"); pl.type = "button"; pl.onclick = () => say(it.out); a.append(pl);
+      }
+      if (it.engine === "free" && settings.apiKey) {
+        const up = el("button", null, "Check with Claude"); up.type = "button"; up.onclick = () => translate(it, "claude"); a.append(up);
+      }
+      c.append(a);
+    }
+    return c;
+  }
+  function showBig(it){ $("showBig").textContent = it.out; $("showPy").textContent = it.pinyin || ""; $("show").hidden = false; }
+  $("show").onclick = () => { $("show").hidden = true; };
+
+  // ---------- Translation engines ----------
+  async function fast(text, sl, tl){
+    const u = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dt=rm&sl=" + sl + "&tl=" + tl + "&q=" + encodeURIComponent(text);
+    const r = await fetch(u);
+    if (!r.ok) throw new Error("fast " + r.status);
+    const j = await r.json();
+    const segs = j[0] || [];
+    const out = segs.filter(s => s && s[0]).map(s => s[0]).join("");
+    const rm = segs.find(s => s && s[0] == null && s[1] == null);
+    return { out, pinyin: (tl.startsWith("zh") && rm && rm[2]) ? rm[2] : "" };
+  }
+
+  function rules(dir){
+    const ctx = items.filter(i => !i.ex && !i.pending && i.out).slice(-5).map(p => p.source + " => " + p.out).join("\n");
+    const task = dir === "zh-en"
+      ? "Translate the NEW TEXT (spoken Chinese, from speech-to-text, may include Malaysian Mandarin, Cantonese or Hokkien words) into natural, plain English."
+      : "Translate the NEW TEXT (spoken English or Malay, from speech-to-text) into natural Simplified Chinese that a Malaysian Chinese supplier would say, and give Hanyu pinyin with tone marks.";
+    return `You are a live interpreter for a café and central-kitchen manager in Malaysia, talking with Chinese-speaking suppliers, contractors and staff.
+${task}
+Speech-to-text often mishears words: fix obvious errors using context. Keep numbers, prices (RM), quantities, units and dates exact.
+${ctx ? "Recent conversation for context:\n" + ctx + "\n" : ""}
+Reply with only JSON, no other text:
+{"source":"the source text, lightly cleaned","out":"the translation","pinyin":"pinyin of the Chinese output, or empty","flag":"one short sentence ONLY if something needs checking (money, quantity, deadline, ambiguity, halal or ingredient concern), else empty"}`;
+  }
+
+  async function claudeTranslate(it){
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": settings.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-5-5",
+        max_tokens: 600,
+        messages: [{ role: "user", content: rules(it.dir) + "\n\nNEW TEXT:\n" + it.source }]
+      })
+    });
+    if (!r.ok) {
+      let msg = "Claude error " + r.status;
+      if (r.status === 401) msg = "Claude API key is wrong. Fix it in Settings.";
+      if (r.status === 429) msg = "Claude is rate limited. Using fast engine for now.";
+      throw new Error(msg);
+    }
+    const j = await r.json();
+    const text = (j.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("Claude reply couldn't be read.");
+    return JSON.parse(m[0]);
+  }
+
+  async function translate(it, force){
+    it.pending = true; it.error = ""; render();
+    const useClaude = (force === "claude" || settings.engine === "claude") && settings.apiKey;
+    const sl = it.dir === "zh-en" ? "auto" : "auto";
+    const tl = it.dir === "zh-en" ? "en" : "zh-CN";
+    if (useClaude) {
+      // Show fast draft immediately, then replace with Claude's version
+      fast(it.source, sl, tl).then(d => { if (it.pending) { it.out = d.out; render(); } }).catch(() => {});
+      try {
+        const r = await claudeTranslate(it);
+        Object.assign(it, { source: String(r.source || it.source), out: String(r.out || it.out || ""), pinyin: String(r.pinyin || ""), flag: String(r.flag || ""), engine: "claude", pending: false });
+      } catch (e) {
+        try { const d = await fast(it.source, sl, tl); Object.assign(it, { out: d.out, pinyin: d.pinyin, engine: "free", pending: false, error: e.message }); }
+        catch { it.pending = false; it.error = e.message; }
+      }
+    } else {
+      try { const d = await fast(it.source, sl, tl); Object.assign(it, { out: d.out, pinyin: d.pinyin, flag: "", engine: "free", pending: false }); }
+      catch { it.pending = false; it.error = "No internet, or the translator didn't respond. Tap retry."; }
+    }
+    save(); render();
+    if (it.dir === "en-zh" && it.out && settings.speak && !force) say(it.out);
+  }
+
+  function say(text){
+    if (!("speechSynthesis" in window)) return;
+    const wasMe = mode === "me";
+    if (wasMe) stopListening();          // don't let the mic hear the reply
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = settings.theirLang === "yue-Hant-HK" ? "zh-HK" : (settings.theirLang === "zh-TW" ? "zh-TW" : "zh-CN");
+    u.rate = 0.95;
+    speechSynthesis.speak(u);
+  }
+
+  function addUtterance(text, dir){
+    text = text.trim();
+    if (!text) return;
+    if (items.some(i => i.ex)) items = items.filter(i => !i.ex);
+    const it = { id: Date.now() + Math.random() + "", dir, source: text };
+    items.push(it);
+    translate(it);
+  }
+
+  // ---------- Live listening ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, mode = null, wake = null, lastDraftAt = 0, draftFor = "", draftTimer = null;
+
+  function setStatus(txt){ $("statusTxt").textContent = txt; $("stage").classList.toggle("live", !!mode); }
+  function setLive(src, out){
+    const s = $("liveSrc"), o = $("liveOut");
+    s.textContent = src || ""; s.classList.toggle("en", !isZh(src));
+    if (out !== undefined) { o.textContent = out || ""; o.classList.toggle("zh", isZh(out)); }
+  }
+  function updateButtons(){
+    $("btnThem").classList.toggle("on", mode === "them");
+    $("btnMe").classList.toggle("on", mode === "me");
+    $("btnThem").querySelector(".s").textContent = mode === "them" ? "Listening… tap to stop" : "They speak Chinese";
+  }
+
+  function liveDraft(text){
+    // Throttled live subtitle using the fast engine
+    clearTimeout(draftTimer);
+    const run = () => {
+      if (!mode || text === draftFor) return;
+      draftFor = text; lastDraftAt = Date.now();
+      const tl = mode === "them" ? "en" : "zh-CN";
+      fast(text, "auto", tl).then(d => { if (draftFor === text && mode) setLive(text, d.out); }).catch(() => {});
+    };
+    const wait = Math.max(0, 600 - (Date.now() - lastDraftAt));
+    draftTimer = setTimeout(run, wait);
+  }
+
+  async function keepAwake(on){
+    try {
+      if (on && "wakeLock" in navigator && !wake) { wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => { wake = null; }); }
+      if (!on && wake) { await wake.release(); wake = null; }
+    } catch {}
+  }
+
+  function startListening(who){
+    if (!SR) {
+      notice = "This browser can't listen live. Open this page in Chrome (Android) or Safari (iPhone), or type below.";
+      render(); return;
+    }
+    stopListening();
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+    mode = who;
+    const r = new SR();
+    rec = r;
+    r.lang = who === "them" ? settings.theirLang : settings.myLang;
+    r.continuous = true;
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+    r.onresult = e => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) {
+          addUtterance(res[0].transcript, who === "them" ? "zh-en" : "en-zh");
+          setLive("", "");
+          draftFor = "";
+        } else interim += res[0].transcript;
+      }
+      if (interim) { setLive(interim); liveDraft(interim); }
+    };
+    r.onerror = e => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        notice = "Microphone access is blocked. Allow the mic for this site in your browser settings, then try again.";
+        mode = null; render();
+      } else if (e.error === "network") {
+        notice = "Live listening needs internet. Check your connection.";
+        mode = null; render();
+      }
+    };
+    r.onend = () => {
+      // Browsers stop after silence; restart if we're still meant to be listening
+      if (rec === r && mode === who) { try { r.start(); return; } catch {} }
+      if (rec === r) { mode = null; rec = null; setStatus("Stopped. Tap a speaker button to listen."); updateButtons(); keepAwake(false); }
+    };
+    try { r.start(); } catch { notice = "Couldn't start the microphone. Try again."; render(); mode = null; return; }
+    notice = ""; render();
+    setStatus(who === "them" ? "Listening to them · " + labelFor(settings.theirLang) : "Listening to you · " + labelFor(settings.myLang));
+    setLive("", "");
+    updateButtons(); keepAwake(true);
+  }
+  function stopListening(){
+    const r = rec; mode = null; rec = null;
+    if (r) { try { r.abort(); } catch {} }
+    clearTimeout(draftTimer);
+    setLive("", "");
+    setStatus("Tap a speaker button to start listening");
+    updateButtons(); keepAwake(false);
+  }
+  function labelFor(l){ return ({ "zh-CN": "Mandarin", "zh-TW": "Mandarin", "yue-Hant-HK": "Cantonese", "en-MY": "English", "ms-MY": "Melayu" })[l] || l; }
+
+  $("btnThem").onclick = () => mode === "them" ? stopListening() : startListening("them");
+  $("btnMe").onclick = () => mode === "me" ? stopListening() : startListening("me");
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && mode) keepAwake(true); });
+
+  $("typeForm").onsubmit = e => {
+    e.preventDefault();
+    const v = $("typeBox").value.trim(); if (!v) return;
+    $("typeBox").value = "";
+    addUtterance(v, isZh(v) ? "zh-en" : "en-zh");
+  };
+
+  // ---------- Settings ----------
+  function openSettings(){
+    $("engine").value = settings.engine; $("apiKey").value = settings.apiKey;
+    $("myLang").value = settings.myLang; $("theirLang").value = settings.theirLang; $("speak").checked = settings.speak;
+    $("settings").hidden = false;
+  }
+  function closeSettings(){
+    settings.engine = $("engine").value; settings.apiKey = $("apiKey").value.trim();
+    settings.myLang = $("myLang").value; settings.theirLang = $("theirLang").value; settings.speak = $("speak").checked;
+    if (settings.engine === "claude" && !settings.apiKey) notice = "Add a Claude API key to use the accurate engine. Using fast for now.";
+    else notice = "";
+    store.set(SETKEY, settings);
+    $("settings").hidden = true;
+    if (mode) startListening(mode);
+    render();
+  }
+  $("openSettings").onclick = openSettings;
+  $("closeSettings").onclick = closeSettings;
+  $("settings").onclick = e => { if (e.target === $("settings")) closeSettings(); };
+  $("clearLog").onclick = () => { items = []; save(); render(); };
+
+  if (!SR) notice = "This browser can't listen live. Use Chrome on Android or Safari on iPhone. Typing still works.";
+  render(); updateButtons();
+})();
+</script>
+</body>
+</html>
